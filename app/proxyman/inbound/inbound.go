@@ -27,10 +27,6 @@ func New(ctx context.Context, config *proxyman.InboundConfig) (*Manager, error) 
 	m := &Manager{
 		taggedHandlers: make(map[string]inbound.Handler),
 	}
-	v := core.MustFromContext(ctx)
-	if err := v.RegisterFeature(m); err != nil {
-		return nil, newError("unable to register InboundHandlerManager").Base(err)
-	}
 	return m, nil
 }
 
@@ -72,7 +68,7 @@ func (m *Manager) GetHandler(ctx context.Context, tag string) (inbound.Handler, 
 
 // RemoveHandler implements inbound.Manager.
 func (m *Manager) RemoveHandler(ctx context.Context, tag string) error {
-	if len(tag) == 0 {
+	if tag == "" {
 		return common.ErrNoClue
 	}
 

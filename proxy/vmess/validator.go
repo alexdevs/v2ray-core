@@ -1,3 +1,5 @@
+// +build !confonly
+
 package vmess
 
 import (
@@ -7,6 +9,7 @@ import (
 
 	"v2ray.com/core/common"
 	"v2ray.com/core/common/protocol"
+	"v2ray.com/core/common/serial"
 	"v2ray.com/core/common/task"
 )
 
@@ -20,6 +23,7 @@ type user struct {
 	lastSec protocol.Timestamp
 }
 
+// TimedUserValidator is a user Validator based on time.
 type TimedUserValidator struct {
 	sync.RWMutex
 	users    []*user
@@ -34,6 +38,7 @@ type indexTimePair struct {
 	timeInc uint32
 }
 
+// NewTimedUserValidator creates a new TimedUserValidator.
 func NewTimedUserValidator(hasher protocol.IDHash) *TimedUserValidator {
 	tuv := &TimedUserValidator{
 		users:    make([]*user, 0, 16),
@@ -54,14 +59,15 @@ func NewTimedUserValidator(hasher protocol.IDHash) *TimedUserValidator {
 
 func (v *TimedUserValidator) generateNewHashes(nowSec protocol.Timestamp, user *user) {
 	var hashValue [16]byte
+	genEndSec := nowSec + cacheDurationSec
 	genHashForID := func(id *protocol.ID) {
 		idHash := v.hasher(id.Bytes())
-		lastSec := user.lastSec
-		if lastSec < nowSec-cacheDurationSec*2 {
-			lastSec = nowSec - cacheDurationSec*2
+		genBeginSec := user.lastSec
+		if genBeginSec < nowSec-cacheDurationSec {
+			genBeginSec = nowSec - cacheDurationSec
 		}
-		for ts := lastSec; ts <= nowSec; ts++ {
-			common.Must2(idHash.Write(ts.Bytes(nil)))
+		for ts := genBeginSec; ts <= genEndSec; ts++ {
+			common.Must2(serial.WriteUint64(idHash, uint64(ts)))
 			idHash.Sum(hashValue[:0])
 			idHash.Reset()
 
@@ -78,7 +84,7 @@ func (v *TimedUserValidator) generateNewHashes(nowSec protocol.Timestamp, user *
 	for _, id := range account.AlterIDs {
 		genHashForID(id)
 	}
-	user.lastSec = nowSec
+	user.lastSec = genEndSec
 }
 
 func (v *TimedUserValidator) removeExpiredHashes(expire uint32) {
@@ -91,7 +97,7 @@ func (v *TimedUserValidator) removeExpiredHashes(expire uint32) {
 
 func (v *TimedUserValidator) updateUserHash() {
 	now := time.Now()
-	nowSec := protocol.Timestamp(now.Unix() + cacheDurationSec)
+	nowSec := protocol.Timestamp(now.Unix())
 	v.Lock()
 	defer v.Unlock()
 
@@ -116,7 +122,7 @@ func (v *TimedUserValidator) Add(u *protocol.MemoryUser) error {
 		lastSec: protocol.Timestamp(nowSec - cacheDurationSec),
 	}
 	v.users = append(v.users, uu)
-	v.generateNewHashes(protocol.Timestamp(nowSec+cacheDurationSec), uu)
+	v.generateNewHashes(protocol.Timestamp(nowSec), uu)
 
 	return nil
 }
@@ -143,7 +149,7 @@ func (v *TimedUserValidator) Remove(email string) bool {
 	email = strings.ToLower(email)
 	idx := -1
 	for i, u := range v.users {
-		if strings.ToLower(u.user.Email) == email {
+		if strings.EqualFold(u.user.Email, email) {
 			idx = i
 			break
 		}
@@ -152,11 +158,11 @@ func (v *TimedUserValidator) Remove(email string) bool {
 		return false
 	}
 	ulen := len(v.users)
-	if idx < ulen {
-		v.users[idx] = v.users[ulen-1]
-		v.users[ulen-1] = nil
-		v.users = v.users[:ulen-1]
-	}
+
+	v.users[idx] = v.users[ulen-1]
+	v.users[ulen-1] = nil
+	v.users = v.users[:ulen-1]
+
 	return true
 }
 

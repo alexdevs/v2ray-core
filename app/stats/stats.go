@@ -1,3 +1,5 @@
+// +build !confonly
+
 package stats
 
 //go:generate errorgen
@@ -7,7 +9,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"v2ray.com/core"
 	"v2ray.com/core/features/stats"
 )
 
@@ -40,13 +41,6 @@ type Manager struct {
 func NewManager(ctx context.Context, config *Config) (*Manager, error) {
 	m := &Manager{
 		counters: make(map[string]*Counter),
-	}
-
-	v := core.FromContext(ctx)
-	if v != nil {
-		if err := v.RegisterFeature(m); err != nil {
-			return nil, newError("failed to register StatManager").Base(err)
-		}
 	}
 
 	return m, nil
